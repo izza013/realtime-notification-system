@@ -1,0 +1,12 @@
+# Requires Python >= 3.12
+# Preferred workflow: `uv sync`  (see README.md)
+# Alternative:        `pip install -r requirements.txt`
+
+# Runtime
+pydantic==2.13.5
+
+# Development / quality tooling
+pytest==9.1.1
+pytest-mock==3.16.0
+ruff==0.16.9
+mypy==2.3.1
