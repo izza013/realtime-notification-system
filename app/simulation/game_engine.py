@@ -3,9 +3,9 @@ from app.domain.enums import DeliveryStatus
 from app.domain.events import (
     ChallengeCompleted,
     ItemAcquired,
-     PlayerAttacked,
+    PlayerAttacked,
     PlayerDefeated,
-    PlayerLeveledUp
+    PlayerLeveledUp,
 )
 
 
@@ -38,7 +38,6 @@ class GameEngine:
             item=item,
         )
         return self._event_handler.handle(event)
-        self._event_handler.handle(event)
 
     def challenge_completed(
         self,
@@ -51,23 +50,25 @@ class GameEngine:
             challenge=challenge,
         )
         return self._event_handler.handle(event)
+
     def player_attacked(
         self,
         attacker_id: int,
         defender_id: int,
     ) -> DeliveryStatus:
+        """Simulate one player attacking another."""
         event = PlayerAttacked(
             attacker_id=attacker_id,
             defender_id=defender_id,
         )
         return self._event_handler.handle(event)
 
-
     def player_defeated(
         self,
         attacker_id: int,
         defeated_id: int,
     ) -> DeliveryStatus:
+        """Simulate one player defeating another."""
         event = PlayerDefeated(
             attacker_id=attacker_id,
             defeated_id=defeated_id,

@@ -1,27 +1,44 @@
-from collections import defaultdict
+"""Per-user notification preferences."""
+
+from dataclasses import dataclass, field
 
 from app.domain.enums import Category
 
 
+@dataclass
 class PreferenceService:
-    """Manages user notification preferences."""
+    """Tracks which notification categories each user has disabled."""
 
-    def __init__(self) -> None:
-        self._preferences: dict[int, dict[Category, bool]] = defaultdict(dict)
+    _disabled: dict[int, set[Category]] = field(default_factory=dict)
+
 
     def set_enabled(
         self,
         user_id: int,
-        category: Category,
+        category: Category | set[Category],
+        *,
         enabled: bool,
     ) -> None:
-        """Enable or disable a notification category for a user."""
-        self._preferences[user_id][category] = enabled
+        """Enable or disable one or multiple notification categories."""
+
+        categories = (
+            {category}
+            if isinstance(category, Category)
+            else category
+        )
+
+        disabled = self._disabled.setdefault(user_id, set())
+
+        if enabled:
+            disabled.difference_update(categories)
+        else:
+            disabled.update(categories)
+        
 
     def is_enabled(
         self,
         user_id: int,
         category: Category,
     ) -> bool:
-        """Return whether a notification category is enabled for a user."""
-        return self._preferences[user_id].get(category, True)
+        """Return whether notifications are enabled for a user."""
+        return category not in self._disabled.get(user_id, set())

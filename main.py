@@ -6,16 +6,13 @@ from app.infrastructure.mock_notification_sender import (
 )
 from app.simulation.game_engine import GameEngine
 from app.simulation.social_system import SocialSystem
-from app.domain.enums import Category, DeliveryStatus
+from app.domain.enums import Category
 
 
 def main() -> None:
     """Build the notification system and run example scenarios."""
 
-    # Infrastructure
     sender = MockNotificationSender()
-
-    # Application services
     factory = NotificationFactory()
     preferences = PreferenceService()
 
@@ -25,22 +22,17 @@ def main() -> None:
         sender=sender,
     )
 
-    # Simulation sources
     game_engine = GameEngine(notification_service)
     social_system = SocialSystem(notification_service)
 
-    # Configure user preferences.
     preferences.set_enabled(
-        user_id=1,
-        category=Category.GAME,
-        enabled=True
-    )
-
-    preferences.set_enabled(
-        user_id=1,
-        category=Category.SOCIAL,
-        enabled=True
-    )
+    user_id=1,
+    category={
+        Category.GAME,
+        Category.SOCIAL,
+    },
+    enabled=False,
+)
 
     print("\n--- Game Events ---")
 
@@ -50,25 +42,28 @@ def main() -> None:
     )
 
     game_engine.item_acquired(
-        user_id=  1,
+        user_id=1,
         item="SwordOfAzeroth",
     )
 
     game_engine.challenge_completed(
         user_id=1,
-        challenge="Dragon Slayer"
+        challenge="Dragon Slayer",
     )
+
     game_engine.player_attacked(
-    attacker_id=5,
-    defender_id=2
-)
+        attacker_id=5,
+        defender_id=2,
+    )
 
     game_engine.player_defeated(
         attacker_id=5,
-        defeated_id=2
+        defeated_id=2,
     )
 
     print("\n--- Social Events ---")
+    
+    
 
     social_system.friend_request_sent(
         sender_id=3,
@@ -87,26 +82,13 @@ def main() -> None:
 
     print("\n--- Preference Test ---")
 
-    # User 1 receives game notifications
-    preferences.set_enabled(
-        user_id=1,
-        category=Category.GAME,
-        enabled=False,
+   
+    status = social_system.new_follower(
+        follower_id=5,
+        followed_id=1,
     )
 
-    # User 1 does not receive social notifications
-    preferences.set_enabled(
-        user_id=1,
-        category=Category.SOCIAL,
-        enabled=False,
-    )
-
-    status = game_engine.player_leveled_up(
-        user_id=1,
-        level=16,
-    )
-
-    print(f"Game notification status: {status}")
+    print(f"Social notification status: {status}")
 
     print("\nNotification simulation completed.")
 

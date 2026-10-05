@@ -1,6 +1,7 @@
 from unittest.mock import Mock
 
 from app.application.event_handler import EventHandler
+from app.domain.enums import DeliveryStatus
 from app.domain.events import (
     FriendRequestAccepted,
     FriendRequestSent,
@@ -61,3 +62,14 @@ def test_new_follower_creates_event() -> None:
     assert isinstance(event, NewFollower)
     assert event.follower_id == 5
     assert event.followed_id == 2
+
+def test_social_system_returns_handler_status() -> None:
+    event_handler = Mock(spec=EventHandler)
+    event_handler.handle.return_value = DeliveryStatus.DELIVERED
+    social_system = SocialSystem(event_handler)
+
+    assert social_system.friend_request_sent(3, 1) == DeliveryStatus.DELIVERED
+    assert (
+        social_system.friend_request_accepted(1, 3) == DeliveryStatus.DELIVERED
+    )
+    assert social_system.new_follower(5, 2) == DeliveryStatus.DELIVERED

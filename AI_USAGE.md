@@ -85,7 +85,8 @@ Instead of immediately writing code, I used the discussion to build a mental mod
 
 ### Example prompt pattern
 
-> "Explain this coding challenge to me and break down exactly what is required, what the deliverables are, and what is in and out of scope."
+> "Explain this coding challenge to me in simple words. What exactly is required, what are the deliverables, and what is
+> in and out of scope? Don't write any code yet."
 
 I then asked follow-up questions whenever something was unclear.
 
@@ -226,12 +227,18 @@ The next step was deciding how events should become notifications.
 Different approaches were discussed, including:
 
 - A large `if/elif` chain.
+- Type-based dispatch with Python's `singledispatchmethod`.
 - A builder-style approach.
-- Type-based dispatch.
 
-The final implementation uses Python's `singledispatchmethod`.
+The final implementation uses event-specific builders. Each event type has its own small builder class
+(for example `PlayerLeveledUpBuilder`) with a `build(event)` method, all in `notification_builders.py`.
+`NotificationFactory` keeps a dictionary that maps each event type to its builder, looks the builder up with
+`type(event)`, and delegates to it. Unknown events raise `UnsupportedEventError`.
 
-The reasoning was that each event type can have its own notification creation logic while keeping the factory extensible and avoiding a large conditional block.
+The AI's first suggestion was `singledispatchmethod`, and an early version of the factory used it. I preferred the
+builder approach because each event's message logic lives in its own class, the factory becomes a plain lookup, and
+the builders can be tested and extended independently. Adding an event means adding a builder and one dictionary entry,
+with no change to existing builders and no large conditional block.
 
 This was an example of AI-assisted design discussion rather than simply accepting generated code.
 
@@ -402,43 +409,125 @@ The important part of the workflow was that suggested fixes were actually run an
 
 ---
 
-## 15. Example Prompt Patterns Used
+## 15. Prompts Used, by Phase
 
-The AI-assisted development used iterative prompts rather than one large prompt.
+I did not use one big prompt. I used short, focused prompts, one per step, and each one followed the same loop:
+**give context → state the goal → ask for an explanation first → implement → run it myself → review.**
 
-Examples of the types of prompts used were:
+Each prompt below is shown with what I was trying to achieve and what I did with the answer.
 
-### Requirement understanding
+### Phase 1 — Understanding the challenge (ChatGPT)
 
-> "Break this coding challenge down for me and explain exactly what is required and what the deliverables are."
+**Goal:** make sure I understood the brief before writing anything.
 
-### Architecture
+> "Here is a coding challenge for a real-time notification system for a gaming platform. Explain it to me in simple
+> words. What exactly is required, what are the deliverables, and what is out of scope? Don't write any code yet."
 
-> "Let's start with the project structure. Explain why we should separate domain, application, infrastructure, and simulation."
+**What I did with it:** turned the answer into a checklist of events, preference behaviour, deliverables and out-of-scope
+items, then asked follow-ups on anything unclear (for example, who should receive a "friend request accepted" notification).
 
-### Incremental implementation
+### Phase 2 — Research (Claude)
 
-> "Let's do this step by step. Explain it first and then we'll implement it."
+**Goal:** learn how production systems structure this kind of problem, so I'm not designing blind.
 
-### Design discussion
+> "I'm building a small notification system driven by events (level up, friend request, etc.) with per-user preferences.
+> Can you point me to good articles on event-driven notification design, and explain the common patterns for keeping the
+> event source separate from the delivery channel?"
 
-> "Can't we create a builder of these notifications and call it in the notification factory?"
+**What I did with it:** read the material, then used the ideas (domain events, separating delivery from logic) in the design.
+I did not copy any implementation.
 
-This led to a comparison of approaches before settling on the chosen design.
+### Phase 3 — Architecture (ChatGPT)
 
-### Debugging
+**Goal:** agree on the structure and the reason for it before coding.
 
-> "It works now, what's next?"
+> "Let's start with the project structure. I'm thinking of domain, application, infrastructure and simulation folders.
+> Explain what belongs in each one and why dependencies should only point inward."
 
-and follow-up questions were used after running commands locally.
+> "Why do we need a Protocol for the sender instead of using the mock class directly? What do we gain, and is it
+> over-engineering for this size of project?"
 
-### Testing
+**What I did with it:** kept the four layers, kept the two protocols (sender and event handler), and noted the trade-off
+so I could explain it later.
 
-> "Let's add tests for this behavior."
+### Phase 4 — Implementing one piece at a time (ChatGPT / Copilot)
 
-### Documentation
+**Goal:** understand every component before moving on, instead of pasting a finished solution.
 
-> "Let's generate README.md."
+> "Let's do this step by step. Explain the next component first: what it is responsible for, what it depends on, and what
+> it should not know about. Then we'll implement it."
+
+> "Now write the domain events as immutable Pydantic models. Each event should only contain the facts of what happened,
+> not anything about notifications."
+
+**What I did with it:** wrote or adjusted the code myself, ran it, and only then moved to the next component.
+
+### Phase 5 — Design discussion: how to create notifications
+
+**Goal:** avoid a long `if/elif` chain in the factory.
+
+> "The factory needs to turn eight different events into notifications. What are the options? Compare an if/elif chain,
+> `singledispatchmethod`, and a builder per event, and tell me which is easier to extend and test."
+
+> "Can't we create a builder for each notification type and have the factory just look the right one up?"
+
+**What I did with it:** the AI first suggested `singledispatchmethod`. I preferred one small builder class per event with
+a registry in the factory, so I switched the factory to that design and updated the tests and docs.
+
+### Phase 6 — Testing
+
+**Goal:** make sure each behaviour is verified, not just the happy path.
+
+> "Let's add tests for the preference service. Cover the default behaviour, disabling each category, and that one user's
+> settings never affect another user."
+
+> "Now add an end-to-end test that goes from the game engine through the service to the mock sender, including the case
+> where the category is disabled."
+
+> "Add a test where the sender raises an error and confirm the service turns it into a DeliveryError."
+
+**What I did with it:** ran the suite after each addition and checked that the assertions actually describe the behaviour I wanted.
+
+### Phase 7 — Debugging
+
+**Goal:** fix environment and structure problems quickly, and understand their cause.
+
+> "uv generated a `src/` layout but my package is called `app`. Imports and test discovery are failing. What is
+> wrong and how do I configure the project to use the `app` package?"
+
+> "This test fails because notifications for user 1 are suppressed. Help me work out whether the bug is in the code or in
+> my test setup before I change anything."
+
+**What I did with it:** applied the fix, re-ran the tests, and confirmed the cause instead of accepting the first suggestion.
+
+### Phase 8 — Review and refinement (Claude Code)
+
+**Goal:** compare the finished project against the challenge and close the gaps.
+
+> "Map this codebase to the assessment document. Tell me whether it matches what is required, and list any gaps."
+
+> "Make the SocialSystem methods return a delivery status too, like the GameEngine does."
+
+> "InvalidEventError is unused. Remove it."
+
+> "Analyze the test cases of each scenario and tell me what they are doing. Then add tests for the cases that are missing."
+
+> "Based on the changes in the codebase, update the README and AI_USAGE.md. I implemented builders, not single dispatch."
+
+**What I did with it:** reviewed each change, re-ran the tests, ruff and mypy, and kept the docs consistent with the code.
+
+### Phase 9 — Documentation
+
+> "Generate a README that explains how to run the project, the architecture, the supported events and the design decisions."
+
+**What I did with it:** edited it so every statement matched the code, and updated it again whenever the code changed.
+
+### What these prompts have in common
+
+- They give context first and say what I want.
+- They ask for an explanation before code.
+- They ask for comparisons and trade-offs when there is a real choice.
+- They are small, so every answer can be run and checked before the next prompt.
 
 The process was conversational and iterative: understand → implement → run → inspect → fix → test → continue.
 
@@ -474,7 +563,7 @@ AI contributed significantly to the development process, but the final implement
 - Verifying actual application behavior.
 - Deciding what was ultimately included in the submission.
 
-For example, different approaches to the notification factory were discussed before `singledispatchmethod` was selected.
+For example, different approaches to the notification factory were discussed, and I chose the builder-based design over the AI's initial `singledispatchmethod` suggestion.
 
 ---
 
@@ -502,7 +591,7 @@ Accept, modify, or reject
 
 This was especially important during debugging because an AI suggestion can be technically plausible but still incorrect for the actual project structure or requirements.
 
-One example during development was an incorrect test-count assumption. The final verified test suite contains **24 passing tests**, and this was confirmed by running `uv run pytest`.
+One example during development was an incorrect test-count assumption. The final verified test suite contains **45 passing tests**, and this was confirmed by running `uv run pytest`.
 
 ---
 
@@ -542,7 +631,7 @@ uv run python main.py
 The test suite completed with:
 
 ```text
-24 passed
+45 passed
 ```
 
 Ruff and mypy checks were also run successfully, and the application simulation was executed through `main.py`.

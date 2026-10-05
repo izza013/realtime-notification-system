@@ -10,6 +10,8 @@ The system receives game and social events, converts them into user notification
   - Player Level Up
   - Item Acquired
   - Challenge Completed
+  - Player Attacked (PvP)
+  - Player Defeated (PvP)
 - Social event notifications
   - Friend Request Sent
   - Friend Request Accepted
@@ -22,7 +24,7 @@ The system receives game and social events, converts them into user notification
 - Dependency injection
 - Protocol-based abstractions
 - Explicit error handling
-- Unit and integration tests
+- Unit, simulation and integration tests (45 tests)
 - Python 3.12 + uv
 
 ## Architecture
@@ -93,6 +95,7 @@ realtime-notification/
 ├── app/
 │   ├── application/
 │   │   ├── event_handler.py
+│   │   ├── notification_builders.py
 │   │   ├── notification_factory.py
 │   │   ├── notification_sender.py
 │   │   ├── notification_service.py
@@ -117,6 +120,7 @@ realtime-notification/
 │   └── simulation/
 │
 ├── main.py
+├── requirements.txt
 ├── AI_USAGE.md
 ├── PLAN.md
 ├── README.md
@@ -148,9 +152,22 @@ This keeps the domain model independent from infrastructure concerns.
 
 `NotificationFactory` converts domain events into `Notification` objects.
 
-The factory uses Python's `singledispatchmethod` to dispatch based on the event type.
+It does not build messages itself. It holds a registry that maps each event type to an event-specific builder
+(`PlayerLeveledUpBuilder`, `FriendRequestSentBuilder`, ...), looks up the builder by `type(event)`, and calls its
+`build(event)` method. If no builder is registered, it raises `UnsupportedEventError`.
 
-This keeps event-specific notification creation separate from notification orchestration logic.
+```python
+self._builders = {
+    PlayerLeveledUp: PlayerLeveledUpBuilder(),
+    FriendRequestSent: FriendRequestSentBuilder(),
+    ...
+}
+```
+
+Each builder lives in `notification_builders.py` and is responsible for one thing: the recipient, category and
+message text for one event type. This keeps message creation separate from the lookup logic and from notification
+orchestration. Supporting a new event means adding an event, a builder and one registry entry; existing builders
+are not touched.
 
 ### Notification Service
 
@@ -184,17 +201,41 @@ A production implementation could later send notifications through another mecha
 
 ### User Preferences
 
-Preferences are stored per user and per category:
+`PreferenceService` stores only what each user has **disabled**, per category:
 
 ```text
-User 1
-├── GAME   → enabled
-└── SOCIAL → disabled
+_disabled = {
+    1: {SOCIAL},          # user 1 turned Social off
+    2: {GAME, SOCIAL},    # user 2 turned both off
+}
 ```
 
-Preferences are independent between users.
+- `set_enabled(user_id, category, *, enabled)` disables a category by adding it to the user's set, and re-enables it by
+  removing it. `category` can be a single `Category` or a set of categories, and `enabled` must be passed by keyword.
+- `is_enabled(user_id, category)` returns `True` unless the category is in that user's disabled set.
 
-If no preference has been configured, notifications are enabled by default.
+```python
+preferences.set_enabled(1, Category.SOCIAL, enabled=False)
+preferences.set_enabled(2, {Category.GAME, Category.SOCIAL}, enabled=False)
+```
+
+Because only disabled categories are stored:
+
+- A user who has never configured anything receives every notification (enabled by default).
+- Preferences are independent between users, and disabling one category does not affect the others.
+- Reading a user's preferences never creates an entry for them.
+
+`NotificationService` calls `is_enabled(notification.user_id, notification.category)` once per event, after the
+notification is built. If the category is disabled it returns `SUPPRESSED` and the sender is never called. Otherwise the
+notification is sent. How preferences are stored is hidden inside `PreferenceService`, so it could change (for example
+to a database) without changing the service.
+
+Example for a user with Social disabled:
+
+| Event | Category | Result |
+|---|---|---|
+| Level up, item acquired, challenge completed, attacked, defeated | Game (enabled) | Delivered |
+| Friend request, friend accepted, new follower | Social (disabled) | Suppressed |
 
 ### Dependency Injection
 
@@ -219,6 +260,8 @@ This makes components easier to test and replace.
 | PlayerLeveledUp | Game | Player |
 | ItemAcquired | Game | Player |
 | ChallengeCompleted | Game | Player |
+| PlayerAttacked | Game | Attacked player (defender) |
+| PlayerDefeated | Game | Defeated player |
 | FriendRequestSent | Social | Request recipient |
 | FriendRequestAccepted | Social | Original requester |
 | NewFollower | Social | Followed player |
@@ -231,6 +274,12 @@ Install dependencies:
 
 ```bash
 uv sync
+```
+
+Alternatively, with pip (Python 3.12+):
+
+```bash
+pip install -r requirements.txt
 ```
 
 Run the simulation:
@@ -267,20 +316,25 @@ The test suite covers:
 - Event-to-notification mapping
 - User preferences
 - Preference isolation between users
-- Game event generation
+- Game event generation (including PvP)
 - Social event generation
-- End-to-end notification flow
-- Notification suppression
+- Simulation methods returning the delivery status
+- End-to-end notification flow for every event type
+- Notification suppression per category and per user
+- Disabling one category not affecting the other
 - Unsupported events
 - Notification delivery failures
 
 Current test suite:
 
 ```text
-24 passed
+45 passed
 ```
 
 ## Example
+
+Every `GameEngine` and `SocialSystem` method returns a `DeliveryStatus`
+(`DELIVERED` or `SUPPRESSED`), so callers can see what happened.
 
 Running:
 
@@ -320,6 +374,13 @@ DeliveryError
 ```
 
 This keeps infrastructure failures from leaking directly into the application layer.
+
+PvP events notify the player on the receiving end:
+
+```text
+[Notification] User 2: Player '5' attacked you.
+[Notification] User 2: Player '5' defeated you.
+```
 
 ## Future Improvements
 

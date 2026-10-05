@@ -8,9 +8,9 @@ from app.domain.events import (
     FriendRequestSent,
     ItemAcquired,
     NewFollower,
-     PlayerAttacked,
+    PlayerAttacked,
     PlayerDefeated,
-    PlayerLeveledUp
+    PlayerLeveledUp,
 )
 from app.domain.exceptions import UnsupportedEventError
 

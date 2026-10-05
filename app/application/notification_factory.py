@@ -1,100 +1,50 @@
-from functools import singledispatchmethod
-
-from app.domain.enums import Category
 from app.domain.events import (
     ChallengeCompleted,
-    PlayerAttacked,
-    PlayerDefeated,
     FriendRequestAccepted,
     FriendRequestSent,
     ItemAcquired,
     NewFollower,
+    PlayerAttacked,
+    PlayerDefeated,
     PlayerLeveledUp,
 )
 from app.domain.exceptions import UnsupportedEventError
 from app.domain.notification import Notification
+from app.application.notification_builders import (
+    ChallengeCompletedBuilder,
+    FriendRequestAcceptedBuilder,
+    FriendRequestSentBuilder,
+    ItemAcquiredBuilder,
+    NewFollowerBuilder,
+    PlayerAttackedBuilder,
+    PlayerDefeatedBuilder,
+    PlayerLeveledUpBuilder,
+)
 
 
 class NotificationFactory:
-    """Creates notifications from supported domain events."""
+    """Creates notifications using event-specific builders."""
 
-    @singledispatchmethod
+    def __init__(self):
+        self._builders = {
+            PlayerLeveledUp: PlayerLeveledUpBuilder(),
+            ItemAcquired: ItemAcquiredBuilder(),
+            ChallengeCompleted: ChallengeCompletedBuilder(),
+            PlayerAttacked: PlayerAttackedBuilder(),
+            PlayerDefeated: PlayerDefeatedBuilder(),
+            FriendRequestSent: FriendRequestSentBuilder(),
+            FriendRequestAccepted: FriendRequestAcceptedBuilder(),
+            NewFollower: NewFollowerBuilder(),
+        }
+
     def create(self, event: object) -> Notification:
         """Create a notification for the given event."""
-        raise UnsupportedEventError(
-            f"Unsupported event type: {type(event).__name__}"
-        )
 
-    @create.register
-    def _(self, event: PlayerLeveledUp) -> Notification:
-        return Notification(
-            user_id=event.user_id,
-            category=Category.GAME,
-            message=f"Congratulations! You've reached level {event.level}!",
-        )
+        builder = self._builders.get(type(event))
 
-    @create.register
-    def _(self, event: ItemAcquired) -> Notification:
-        return Notification(
-            user_id=event.user_id,
-            category=Category.GAME,
-            message=f"You've acquired the legendary {event.item}!",
-        )
+        if builder is None:
+            raise UnsupportedEventError(
+                f"Unsupported event type: {type(event).__name__}"
+            )
 
-    @create.register
-    def _(self, event: ChallengeCompleted) -> Notification:
-        return Notification(
-            user_id=event.user_id,
-            category=Category.GAME,
-            message=(
-                f"Congratulations! You've completed "
-                f"the challenge '{event.challenge}'!"
-            ),
-        )
-    @create.register
-    def _(self, event: PlayerAttacked) -> Notification:
-        return Notification(
-            user_id=event.defender_id,
-            category=Category.GAME,
-            message=f"Player '{event.attacker_id}' attacked you.",
-        )
-    @create.register
-    def _(self, event: PlayerDefeated) -> Notification:
-        return Notification(
-            user_id=event.defeated_id,
-            category=Category.GAME,
-            message=f"Player '{event.attacker_id}' defeated you.",
-        )
-
-
-    @create.register
-    def _(self, event: FriendRequestSent) -> Notification:
-        return Notification(
-            user_id=event.recipient_id,
-            category=Category.SOCIAL,
-            message=(
-                f"Player '{event.sender_id}' has sent you "
-                f"a friend request."
-            ),
-        )
-
-    @create.register
-    def _(self, event: FriendRequestAccepted) -> Notification:
-        return Notification(
-            user_id=event.requester_id,
-            category=Category.SOCIAL,
-            message=(
-                f"Player '{event.accepter_id}' has accepted "
-                f"your friend request."
-            ),
-        )
-
-    @create.register
-    def _(self, event: NewFollower) -> Notification:
-        return Notification(
-            user_id=event.followed_id,
-            category=Category.SOCIAL,
-            message=(
-                f"Player '{event.follower_id}' is now following you."
-            ),
-        )
+        return builder.build(event)
